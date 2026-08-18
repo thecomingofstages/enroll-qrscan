@@ -14,6 +14,14 @@ const SCAN_ADMIN_SUB = process.env.SCAN_ADMIN_SUB;
 const SCAN_ADMIN_NICKNAME = process.env.SCAN_ADMIN_NICKNAME ?? "Scanner";
 const SCAN_TOKEN_TTL_SECONDS = 15 * 60;
 
+// Frontend mirror of the upstream master switch for raw UUID scans. Read
+// server-side only — never prefixed with NEXT_PUBLIC_.
+const ALLOW_RAW_UUID_SCAN = process.env.ALLOW_RAW_UUID_SCAN === "true";
+
+// Strict UUID v7 detector — mirrors the regex in apps/api Event.helper.js.
+const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuidV7 = (value: string): boolean => UUID_V7_RE.test(value.trim());
+
 function base64url(input: Buffer | string): string {
   const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input;
   return buf
@@ -66,6 +74,9 @@ function resolveBearerToken(): string | null {
 }
 
 function extractUserIdFromQrToken(qrToken: string): string | null {
+  // Bare UUID v7 — used as user_id directly when raw-UUID scanning is on.
+  if (isUuidV7(qrToken)) return qrToken.trim();
+
   const [encoded] = qrToken.split(".");
   if (!encoded) return null;
 
@@ -113,6 +124,21 @@ export async function PATCH(request: NextRequest) {
     return Response.json(
       { status: 400, error: "ValidationError", details: "qr_token is required." },
       { status: 400 },
+    );
+  }
+
+  // Raw UUID v7 — short-circuit locally if the feature is disabled. Mirrors
+  // the check in /api/scan so the friendly error surfaces without a wasted
+  // upstream round-trip.
+  if (isUuidV7(qr_token) && !ALLOW_RAW_UUID_SCAN) {
+    return Response.json(
+      {
+        status: 403,
+        error: "RawUuidDisabled",
+        message:
+          "Raw UUID scanning is disabled. Set ALLOW_RAW_UUID_SCAN=true in the server config to accept bare UUID v7 strings.",
+      },
+      { status: 403 },
     );
   }
 
