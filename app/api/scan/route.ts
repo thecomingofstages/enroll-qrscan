@@ -3,6 +3,17 @@ import type { NextRequest } from "next/server";
 
 const BASE_URL = process.env.BASE_URL;
 
+// Frontend mirror of the upstream master switch. Read server-side only; do not
+// prefix with NEXT_PUBLIC_ since this lives in app/api/** and never reaches the
+// browser. Defaults to false — any unset value keeps raw-UUID scans disabled.
+const ALLOW_RAW_UUID_SCAN = process.env.ALLOW_RAW_UUID_SCAN === "true";
+
+// Strict UUID v7 detector — version nibble must be 7, variant must be RFC 4122.
+// Mirrors the regex in apps/api/src/app/helpers/Event.helper.js so the
+// frontend and the upstream agree on what "looks like a UUID v7" means.
+const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuidV7 = (value: string): boolean => UUID_V7_RE.test(value.trim());
+
 // Static bearer token — used as-is if set. Several names are accepted so the
 // operator can pick whichever convention they prefer.
 const STATIC_API_TOKEN =
@@ -165,6 +176,21 @@ export async function POST(request: NextRequest) {
         details: "qr_token is required.",
       },
       { status: 400 },
+    );
+  }
+
+  // Raw UUID v7 — short-circuit locally if the feature is disabled. We detect
+  // before forwarding so the UI gets a clean, instant message instead of a
+  // doomed upstream round-trip.
+  if (isUuidV7(qr_token) && !ALLOW_RAW_UUID_SCAN) {
+    return Response.json(
+      {
+        status: 403,
+        error: "RawUuidDisabled",
+        message:
+          "Raw UUID scanning is disabled. Set ALLOW_RAW_UUID_SCAN=true in the server config to accept bare UUID v7 strings.",
+      },
+      { status: 403 },
     );
   }
 

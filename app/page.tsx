@@ -538,6 +538,8 @@ function SuccessView({
 
 function ErrorView({ response }: { response: ScanResponse }) {
   const parsedError = parseErrorPayload(response);
+  const friendlyTitle =
+    (parsedError.code && ERROR_TITLES[parsedError.code]) || undefined;
 
   return (
     <div className="text-left">
@@ -545,7 +547,11 @@ function ErrorView({ response }: { response: ScanResponse }) {
           ATTENDANCE NOT CHECKED
       </pre>
       <p className="font-semibold text-lg">
-        {parsedError.message ?? response.message ?? response.error ?? "Request failed"}
+        {friendlyTitle ??
+          parsedError.message ??
+          response.message ??
+          response.error ??
+          "Request failed"}
       </p>
       <div className="mt-3 rounded bg-black/20 p-3 text-sm">
       <pre className="text-xs text-gray-100 text-left whitespace-pre-wrap wrap-break-word">
@@ -582,6 +588,12 @@ function parseErrorPayload(response: ScanResponse): {
 
   return {};
 }
+
+// Map upstream/Next-route error codes to human-readable titles shown in
+// ErrorView. Falls back to response.message when no mapping is registered.
+const ERROR_TITLES: Record<string, string> = {
+  RawUuidDisabled: "Raw UUID scanning is disabled",
+};
 
 function formatStampInfo(value: unknown): string {
   if (!Array.isArray(value)) return "";
